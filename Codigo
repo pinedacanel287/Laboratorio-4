@@ -1,0 +1,191 @@
+// Universidad del Valle de Guatemala
+// B3023 Digital 2
+// Emilio Soria, 221170
+// Nombre del programa
+// Micro: ESP32 DEV Kit
+// Función del programa
+
+//**************************************************/
+// Importación de librerías
+//**************************************************/
+#include <Arduino.h>
+#include <stdint.h>
+// Paso 1: Importar librería
+#include <driver/ledc.h>
+
+
+//**************************************************/
+// Definiciones
+//**************************************************/
+// Paso 2: Escoger el canal PWM
+#define canalPWMservo 9
+#define canalPWMrojo 10
+#define canalPWMverde 11
+#define canalPWMazul 12
+
+// Paso 3: Definir frecuencia de la señal PWM (Hz)
+#define freqPWM 50
+// Paso 4: Definir resolución del duty cycle (1-16 bits)
+#define resPWM 10 // 10 bits
+
+#define pinServo 12
+#define pinRojo 5
+#define pinAzul 4
+#define pinVerde 2
+
+//**************************************************/
+// Variables globales
+//**************************************************/
+int servoAngle[5] = {26, 38, 51, 77, 90, 97, 102, 128}; // Posiciones del servo
+int LEDintensity[4] = {0, 256, 768, 1024};
+
+int rojoCounter = 0;
+int verdeCounter = 0;
+int azulCounter = 0;
+
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
+struct Button {
+    const uint8_t PIN;
+    volatile uint8_t numberKeyPresses;
+    bool pressed;
+};
+
+Button botonDerServo = {33, 0, false};
+Button botonIzqServo = {32, 0, false};
+Button botonSwitchColor = {25, 0, false};
+Button botonIntensidadColor = {26, 0, false};
+
+
+
+//**************************************************/
+// Prototipos de función
+//**************************************************/
+void initPWMservo(void);
+void initPWMleds(void);
+
+//Definir lo que ocurre durante las ISRs
+void IRAM_ATTR BTNderServo_ISR() {
+  portENTER_CRITICAL_ISR(&mux);
+    botonDerServo.numberKeyPresses++;
+    botonDerServo.pressed = true;
+  portEXIT_CRITICAL_ISR(&mux);
+}
+
+void IRAM_ATTR BTNizqServo_ISR() {
+  portENTER_CRITICAL_ISR(&mux);
+    botonIzqServo.numberKeyPresses++;
+    botonIzqServo.pressed = true;
+  portEXIT_CRITICAL_ISR(&mux);
+}
+
+void IRAM_ATTR BTNswitchColor_ISR() {
+  portENTER_CRITICAL_ISR(&mux);
+    botonSwitchColor.numberKeyPresses++;
+    botonSwitchColor.pressed = true;
+  portEXIT_CRITICAL_ISR(&mux);
+}
+
+void IRAM_ATTR BTNintensidadColor_ISR() {
+  portENTER_CRITICAL_ISR(&mux);
+    botonIntensidadColor.numberKeyPresses++;
+    botonIntensidadColor.pressed = true;
+  portEXIT_CRITICAL_ISR(&mux);
+}
+
+//**************************************************/
+// Función de configuración
+//**************************************************/
+void setup() {
+  Serial.begin(115200);
+
+  initPWMservo();
+  initPWMleds();
+
+  // Adjuntar interrupción al pin
+  pinMode(botonDerServo.PIN, INPUT_PULLUP);
+  attachInterrupt(botonDerServo.PIN, BTNderServo_ISR, FALLING);
+
+  pinMode(botonIzqServo.PIN, INPUT_PULLUP);
+  attachInterrupt(botonIzqServo.PIN, BTNizqServo_ISR, FALLING);
+
+  pinMode(botonSwitchColor.PIN, INPUT_PULLUP);
+  attachInterrupt(botonSwitchColor.PIN, BTNswitchColor_ISR, FALLING);
+
+  pinMode(botonIntensidadColor.PIN, INPUT_PULLUP);
+  attachInterrupt(botonIntensidadColor.PIN, BTNintensidadColor_ISR, FALLING);
+}
+
+//**************************************************/
+// Loop principal
+//**************************************************/
+void loop() {
+  ledcWrite(canalPWMservo, servoAngle[abs((botonDerServo.numberKeyPresses-botonIzqServo.numberKeyPresses))%5]);
+  // Serial.printf("%d\n", servoAngle[abs((botonDerServo.numberKeyPresses-botonIzqServo.numberKeyPresses))%5]);
+  
+  if ((botonSwitchColor.numberKeyPresses %4) == 0){
+    
+    ledcWrite(canalPWMrojo, LEDintensity[rojoCounter %4]);
+    if (botonIntensidadColor.pressed){
+      rojoCounter++;
+      // Serial.printf("%d\n", rojoCounter);
+      botonIntensidadColor.pressed = false;
+    }
+  }
+  else if ((botonSwitchColor.numberKeyPresses %3) == 1){
+    
+    ledcWrite(canalPWMverde, LEDintensity[verdeCounter %4]);
+    if (botonIntensidadColor.pressed){
+      verdeCounter++;
+      botonIntensidadColor.pressed = false;
+    }
+  }
+  else if ((botonSwitchColor.numberKeyPresses %3) == 2){
+    
+    ledcWrite(canalPWMazul, LEDintensity[azulCounter %4]);
+    if (botonIntensidadColor.pressed){
+      azulCounter++;
+      botonIntensidadColor.pressed = false;
+    }
+  }
+  else {
+    
+    if (servoAngle < 60) {
+      ledcWrite(canalPWMrojo, LEDintensity[rojoCounter %4]);
+    }
+    if (60 < servoAngle < 90) {
+      ledcWrite(canalPWMverde, LEDintensity[verdeCounter %4]);
+    }
+    if (90 < servoAngle) {
+      ledcWrite(canalPWMazul, LEDintensity[verdeCounter %4]);
+    }
+  }
+  Serial.printf("%d", botonSwitchColor.numberKeyPresses);
+  delay(2000);
+}
+
+//**************************************************/
+// Definición de funciones
+//**************************************************/
+void initPWMservo(void){
+  // Paso 4.1:
+  ledcSetup(canalPWMservo, freqPWM, resPWM);
+  // Paso 5: Especificar GPIO donde la señal saldrá
+  ledcAttachPin(pinServo, canalPWMservo);
+  // Paso 6: Establecer ciclo de trabajo
+  ledcWrite(canalPWMservo, 0);
+}
+
+void initPWMleds(void){
+  ledcSetup(canalPWMrojo, freqPWM, resPWM);
+  ledcSetup(canalPWMverde, freqPWM, resPWM);
+  ledcSetup(canalPWMazul, freqPWM, resPWM);
+
+  ledcAttachPin(pinRojo, canalPWMrojo);
+  ledcAttachPin(pinVerde, canalPWMverde);
+  ledcAttachPin(pinAzul, canalPWMazul);
+
+  ledcWrite(canalPWMrojo, 0);
+  ledcWrite(canalPWMverde, 0);
+  ledcWrite(canalPWMazul, 0);
+}
